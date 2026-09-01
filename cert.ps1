@@ -22,18 +22,25 @@ $CertbotHome  = if ($env:CERTBOT_HOME) { $env:CERTBOT_HOME } else { Join-Path $e
 $LiveDir      = Join-Path $CertbotHome 'live'
 $CertbotBin   = if ($env:CERTBOT_BIN) { $env:CERTBOT_BIN } else { 'certbot' }
 
+function ConvertTo-Bool {
+  param([string]$Value)
+  return $Value -in @('1', 'true', 'True', 'TRUE', 'yes', 'on')
+}
+
 $Email  = $env:EMAIL
 $UILang = $env:UI_LANG
 $OutputDir = if ($env:OUTPUT_DIR) { $env:OUTPUT_DIR } else { Join-Path $HOME 'ssl' }
+$Staging = ConvertTo-Bool $env:STAGING
 
 function Import-Config {
   if (-not (Test-Path $ConfigFile)) { return }
   foreach ($line in Get-Content $ConfigFile) {
-    if ($line -notmatch '^(EMAIL|OUTPUT_DIR|UI_LANG)=(.*)$') { continue }
+    if ($line -notmatch '^(EMAIL|OUTPUT_DIR|UI_LANG|STAGING)=(.*)$') { continue }
     switch ($Matches[1]) {
       'EMAIL'      { if (-not $Email)  { $script:Email  = $Matches[2] } }
       'OUTPUT_DIR' { if (-not $env:OUTPUT_DIR) { $script:OutputDir = $Matches[2] } }
       'UI_LANG'    { if (-not $UILang) { $script:UILang = $Matches[2] } }
+      'STAGING'    { if (-not $env:STAGING) { $script:Staging = ConvertTo-Bool $Matches[2] } }
     }
   }
 }
@@ -43,6 +50,7 @@ function Save-Config {
     "EMAIL=$Email"
     "OUTPUT_DIR=$OutputDir"
     "UI_LANG=$UILang"
+    "STAGING=$(if ($Staging) { 'true' } else { 'false' })"
   ) | Set-Content -Path $ConfigFile -Encoding UTF8
 }
 
@@ -102,6 +110,8 @@ $Strings = @{
   'ru:issue_dns_hint'      = '  certbot попросит добавить TXT-запись _acme-challenge.{0} в DNS'
   'en:issue_done'          = 'Certificate issued!'
   'ru:issue_done'          = 'Сертификат выпущен!'
+  'en:issue_staging_tag'   = ' [STAGING]'
+  'ru:issue_staging_tag'   = ' [ТЕСТОВЫЙ]'
 
   'en:copy_missing_src' = 'Folder {0} not found, skipping copy.'
   'ru:copy_missing_src' = 'Папка {0} не найдена, пропускаем копирование.'
@@ -111,6 +121,8 @@ $Strings = @{
   'ru:copy_done'        = 'Файлы скопированы в {0}\'
   'en:copy_files_note'  = '  fullchain.pem  cert.pem  chain.pem  privkey.pem'
   'ru:copy_files_note'  = '  fullchain.pem  cert.pem  chain.pem  privkey.pem'
+  'en:keys_mismatch_warning' = 'Certificate and private key do not match for {0} - aborting to avoid installing a broken pair. Check {1} manually.'
+  'ru:keys_mismatch_warning' = 'Сертификат и приватный ключ не совпадают для {0} — прерываем, чтобы не поставить нерабочую пару. Проверьте {1} вручную.'
 
   'en:add_domain_prompt'          = 'Enter a domain (without wildcard, e.g. example.com)'
   'ru:add_domain_prompt'          = 'Введите домен (без wildcard, например example.com)'
@@ -128,6 +140,15 @@ $Strings = @{
   'ru:add_domain_added'           = 'Домен {0} добавлен в список (сохранён в {1}).'
   'en:add_domain_issue_now'       = '  Issue a certificate for it right now? [y/N]'
   'ru:add_domain_issue_now'       = '  Выпустить сертификат для него прямо сейчас? [y/N]'
+
+  'en:remove_domain_title'   = 'Choose a domain to remove from the list:'
+  'ru:remove_domain_title'   = 'Выберите домен для удаления из списка:'
+  'en:remove_domain_confirm' = '  Remove {0} from the list? [y/N]'
+  'ru:remove_domain_confirm' = '  Удалить {0} из списка? [y/N]'
+  'en:remove_domain_done'    = 'Domain {0} removed from the list.'
+  'ru:remove_domain_done'    = 'Домен {0} удалён из списка.'
+  'en:remove_domain_note'    = '  Note: certificate files were not deleted. If a folder named {0} still exists next to the script or in the output folder, it will be re-discovered on the next run.'
+  'ru:remove_domain_note'    = '  Обратите внимание: файлы сертификата не удалены. Если папка {0} всё ещё существует рядом со скриптом или в папке вывода, она будет снова обнаружена при следующем запуске.'
 
   'en:select_domain_title' = 'Choose a domain to issue/reissue:'
   'ru:select_domain_title' = 'Выберите домен для выпуска/перевыпуска:'
@@ -195,12 +216,20 @@ $Strings = @{
   'ru:settings_output_label' = '  Папка вывода сертификатов : {0}'
   'en:settings_lang_label'   = '  Interface language        : {0}'
   'ru:settings_lang_label'   = '  Язык интерфейса           : {0}'
+  'en:settings_staging_label' = '  Staging mode (test certs) : {0}'
+  'ru:settings_staging_label' = '  Тестовый режим (staging)  : {0}'
+  'en:staging_on'  = 'ON'
+  'ru:staging_on'  = 'ВКЛ'
+  'en:staging_off' = 'OFF'
+  'ru:staging_off' = 'ВЫКЛ'
   'en:settings_opt_email'  = '  1) Change email'
   'ru:settings_opt_email'  = '  1) Изменить email'
   'en:settings_opt_output' = '  2) Change output folder'
   'ru:settings_opt_output' = '  2) Изменить папку вывода'
   'en:settings_opt_lang'   = '  3) Change language'
   'ru:settings_opt_lang'   = '  3) Изменить язык'
+  'en:settings_opt_staging' = '  4) Toggle staging mode (test certificates)'
+  'ru:settings_opt_staging' = '  4) Переключить тестовый режим (staging)'
   'en:settings_opt_back'   = '  0) Back'
   'ru:settings_opt_back'   = '  0) Назад'
   'en:settings_new_email_prompt'  = '  New email'
@@ -215,6 +244,11 @@ $Strings = @{
   'ru:settings_output_updated' = 'Папка вывода обновлена: {0}'
   'en:settings_lang_updated'   = 'Language updated: {0}'
   'ru:settings_lang_updated'   = 'Язык обновлён: {0}'
+  'en:settings_staging_updated' = 'Staging mode: {0}'
+  'ru:settings_staging_updated' = 'Тестовый режим: {0}'
+
+  'en:staging_banner' = '⚠ STAGING MODE is ON - issued certificates are TEST certificates and are not trusted by browsers.'
+  'ru:staging_banner' = '⚠ ВКЛЮЧЁН ТЕСТОВЫЙ РЕЖИМ (staging) — выпущенные сертификаты ТЕСТОВЫЕ и не будут доверенными в браузерах.'
 
   'en:invalid_choice' = 'Invalid choice.'
   'ru:invalid_choice' = 'Неверный выбор.'
@@ -224,12 +258,14 @@ $Strings = @{
   'ru:menu_opt_issue'    = '  1) Выпустить / перевыпустить сертификат из списка'
   'en:menu_opt_add'      = '  2) Add a new domain'
   'ru:menu_opt_add'      = '  2) Добавить новый домен'
-  'en:menu_opt_iis'      = '  3) Convert a certificate to PFX for IIS'
-  'ru:menu_opt_iis'      = '  3) Конвертировать сертификат в PFX для IIS'
-  'en:menu_opt_refresh'  = '  4) Refresh the table'
-  'ru:menu_opt_refresh'  = '  4) Показать таблицу заново'
-  'en:menu_opt_settings' = '  5) Settings (email, output folder, language)'
-  'ru:menu_opt_settings' = '  5) Настройки (email, папка вывода, язык)'
+  'en:menu_opt_remove'   = '  3) Remove a domain from the list'
+  'ru:menu_opt_remove'   = '  3) Удалить домен из списка'
+  'en:menu_opt_iis'      = '  4) Convert a certificate to PFX for IIS'
+  'ru:menu_opt_iis'      = '  4) Конвертировать сертификат в PFX для IIS'
+  'en:menu_opt_refresh'  = '  5) Refresh the table'
+  'ru:menu_opt_refresh'  = '  5) Показать таблицу заново'
+  'en:menu_opt_settings' = '  6) Settings (email, output folder, language, staging)'
+  'ru:menu_opt_settings' = '  6) Настройки (email, папка вывода, язык, staging)'
   'en:menu_opt_exit'     = '  0) Exit'
   'ru:menu_opt_exit'     = '  0) Выход'
   'en:menu_prompt' = '  Choice'
@@ -298,8 +334,17 @@ function Assert-Dependency {
 }
 
 Assert-Dependency -Name 'certbot' -ChocoPackage 'certbot' -WingetId 'EFF.Certbot'
+Assert-Dependency -Name 'openssl' -ChocoPackage 'openssl' -WingetId 'ShiningLight.OpenSSL.Light'
 
-# openssl is only needed for the PFX/IIS conversion step; checked lazily there.
+function Test-KeyMatchesCert {
+  param([string]$CertPath, [string]$KeyPath)
+  if (-not (Test-Path $CertPath) -or -not (Test-Path $KeyPath)) { return $false }
+  $certPubKey = & openssl x509 -in $CertPath -pubkey -noout 2>$null
+  $certPub = $certPubKey | & openssl md5 2>$null
+  $keyPubKey = & openssl pkey -in $KeyPath -pubout 2>$null
+  $keyPub = $keyPubKey | & openssl md5 2>$null
+  return ($certPub -and $keyPub -and ($certPub -eq $keyPub))
+}
 
 # ---------------------------------------------------------------------------
 # Domain list
@@ -357,6 +402,11 @@ $script:StatusMap = @{}
 function Show-Table {
   $script:StatusMap = @{}
 
+  if ($Staging) {
+    Write-Host ''
+    Write-Host (T staging_banner) -ForegroundColor Yellow
+  }
+
   if ($Domains.Count -eq 0) {
     Write-Host ''
     Warn-Msg (T table_empty)
@@ -405,25 +455,30 @@ function Invoke-IssueCert {
     return $false
   }
 
-  Log "$(T issue_running_label) $Domain + *.$Domain"
+  $stagingTag = if ($Staging) { T issue_staging_tag } else { '' }
+  Log "$(T issue_running_label) $Domain + *.$Domain$stagingTag"
   Write-Host (T issue_dns_hint @($Domain))
   Write-Host ''
 
   New-Item -ItemType Directory -Force -Path $CertbotHome | Out-Null
 
-  & $CertbotBin certonly `
-    --manual `
-    --preferred-challenges dns `
-    --agree-tos `
-    --non-interactive:$false `
-    --email $Email `
-    --expand `
-    --cert-name $Domain `
-    --config-dir $CertbotHome `
-    --work-dir (Join-Path $CertbotHome 'work') `
-    --logs-dir (Join-Path $CertbotHome 'logs') `
-    -d $Domain `
-    -d "*.$Domain"
+  $certbotArgs = @(
+    'certonly'
+    '--manual'
+    '--preferred-challenges', 'dns'
+    '--agree-tos'
+    '--email', $Email
+    '--expand'
+    '--cert-name', $Domain
+    '--config-dir', $CertbotHome
+    '--work-dir', (Join-Path $CertbotHome 'work')
+    '--logs-dir', (Join-Path $CertbotHome 'logs')
+    '-d', $Domain
+    '-d', "*.$Domain"
+  )
+  if ($Staging) { $certbotArgs += '--staging' }
+
+  & $CertbotBin @certbotArgs
 
   if ($LASTEXITCODE -ne 0) { return $false }
 
@@ -452,6 +507,11 @@ function Copy-Cert {
   try {
     icacls (Join-Path $dst 'privkey.pem') /inheritance:r /grant:r "$($env:USERNAME):(R)" | Out-Null
   } catch {}
+
+  if (-not (Test-KeyMatchesCert (Join-Path $dst 'cert.pem') (Join-Path $dst 'privkey.pem'))) {
+    Warn-Msg (T keys_mismatch_warning @($Domain, $dst))
+    return $false
+  }
 
   Ok-Msg (T copy_done @($dst))
   Write-Host (T copy_files_note)
@@ -487,6 +547,39 @@ function Add-Domain {
     if (-not (Invoke-IssueCert $newDomain)) { return }
     Copy-Cert $newDomain | Out-Null
   }
+}
+
+function Remove-Domain {
+  if ($Domains.Count -eq 0) { Warn-Msg (T table_empty); return }
+
+  Write-Host (T remove_domain_title)
+  Write-Host ''
+
+  for ($i = 0; $i -lt $Domains.Count; $i++) {
+    Write-Host ('  {0,2}) {1}' -f ($i + 1), $Domains[$i])
+  }
+  Write-Host ''
+
+  $choice = Read-Host (T select_domain_prompt)
+  if ($choice -eq '0') { return }
+  if ($choice -notmatch '^\d+$' -or [int]$choice -lt 1 -or [int]$choice -gt $Domains.Count) {
+    Warn-Msg (T select_domain_range_err @($Domains.Count))
+    return
+  }
+
+  $target = $Domains[[int]$choice - 1]
+  $confirm = Read-Host (T remove_domain_confirm @($target))
+  if ($confirm -notmatch '^[Yy]$') { Warn-Msg (T cancelled); return }
+
+  if (Test-Path $DomainsFile) {
+    $remaining = Get-Content $DomainsFile | Where-Object { $_.Trim() -ne $target }
+    Set-Content -Path $DomainsFile -Value $remaining -Encoding UTF8
+  }
+
+  $Domains.Remove($target) | Out-Null
+
+  Ok-Msg (T remove_domain_done @($target))
+  Warn-Msg (T remove_domain_note @($target))
 }
 
 function Select-Domain {
@@ -560,8 +653,6 @@ function Invoke-ConvertToIisMenu {
 function Convert-ToIis {
   param([string]$Domain)
 
-  Assert-Dependency -Name 'openssl' -ChocoPackage 'openssl' -WingetId 'ShiningLight.OpenSSL.Light'
-
   $outSrc = Join-Path $OutputDir $Domain
   $liveSrc = Join-Path $LiveDir $Domain
   $certDir = $null
@@ -573,6 +664,11 @@ function Convert-ToIis {
   } else {
     Warn-Msg (T iis_missing_cert @($Domain))
     Warn-Msg (T iis_missing_cert_hint @($outSrc))
+    return
+  }
+
+  if (-not (Test-KeyMatchesCert (Join-Path $certDir 'cert.pem') (Join-Path $certDir 'privkey.pem'))) {
+    Warn-Msg (T keys_mismatch_warning @($Domain, $certDir))
     return
   }
 
@@ -622,10 +718,12 @@ function Show-SettingsMenu {
     Write-Host (T settings_email_label @($Email))
     Write-Host (T settings_output_label @($OutputDir))
     Write-Host (T settings_lang_label @($UILang))
+    Write-Host (T settings_staging_label @($(if ($Staging) { T staging_on } else { T staging_off })))
     Write-Host ''
     Write-Host (T settings_opt_email)
     Write-Host (T settings_opt_output)
     Write-Host (T settings_opt_lang)
+    Write-Host (T settings_opt_staging)
     Write-Host (T settings_opt_back)
     Write-Host ''
     $choice = Read-Host (T menu_prompt)
@@ -652,6 +750,11 @@ function Show-SettingsMenu {
         Select-Language
         Ok-Msg (T settings_lang_updated @($UILang))
       }
+      '4' {
+        $script:Staging = -not $Staging
+        Save-Config
+        Ok-Msg (T settings_staging_updated @($(if ($Staging) { T staging_on } else { T staging_off })))
+      }
       '0' { return }
       default { Warn-Msg (T invalid_choice) }
     }
@@ -671,6 +774,7 @@ function Show-MainMenu {
   Write-Host (T menu_title)
   Write-Host (T menu_opt_issue)
   Write-Host (T menu_opt_add)
+  Write-Host (T menu_opt_remove)
   Write-Host (T menu_opt_iis)
   Write-Host (T menu_opt_refresh)
   Write-Host (T menu_opt_settings)
@@ -680,9 +784,10 @@ function Show-MainMenu {
   switch ($action) {
     '1' { Select-Domain }
     '2' { Add-Domain }
-    '3' { Invoke-ConvertToIisMenu }
-    '4' { Show-Table }
-    '5' { Show-SettingsMenu }
+    '3' { Remove-Domain }
+    '4' { Invoke-ConvertToIisMenu }
+    '5' { Show-Table }
+    '6' { Show-SettingsMenu }
     '0' { exit 0 }
     default { Warn-Msg (T invalid_choice) }
   }

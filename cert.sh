@@ -4,6 +4,7 @@ set -eo pipefail
 
 EMAIL="${EMAIL:-}"
 UI_LANG="${UI_LANG:-}"
+STAGING="${STAGING:-false}"
 
 OUTPUT_USER="${SUDO_USER:-${USER:-$(id -un 2>/dev/null)}}"
 OUTPUT_HOME=$(eval echo "~${OUTPUT_USER}")
@@ -36,8 +37,18 @@ save_config() {
 EMAIL="${EMAIL}"
 OUTPUT_DIR="${OUTPUT_DIR}"
 UI_LANG="${UI_LANG}"
+STAGING="${STAGING}"
 CFG
   chown "$OUTPUT_USER" "$CONFIG_FILE" 2>/dev/null || true
+}
+
+keys_match() {
+  local cert="$1" key="$2"
+  [[ -f "$cert" && -f "$key" ]] || return 1
+  local cert_pub key_pub
+  cert_pub=$(openssl x509 -in "$cert" -pubkey -noout 2>/dev/null | openssl md5 2>/dev/null)
+  key_pub=$(openssl pkey -in "$key" -pubout 2>/dev/null | openssl md5 2>/dev/null)
+  [[ -n "$cert_pub" && "$cert_pub" == "$key_pub" ]]
 }
 
 t() {
@@ -107,6 +118,8 @@ t() {
     ru:issue_dns_hint) fmt="  certbot попросит добавить TXT-запись _acme-challenge.%s в DNS" ;;
     en:issue_done) fmt="Certificate issued!" ;;
     ru:issue_done) fmt="Сертификат выпущен!" ;;
+    en:issue_staging_tag) fmt=" [STAGING]" ;;
+    ru:issue_staging_tag) fmt=" [ТЕСТОВЫЙ]" ;;
 
     en:copy_missing_src) fmt="Folder %s not found, skipping copy." ;;
     ru:copy_missing_src) fmt="Папка %s не найдена, пропускаем копирование." ;;
@@ -116,6 +129,8 @@ t() {
     ru:copy_done) fmt="Файлы скопированы в %s/" ;;
     en:copy_files_note) fmt="  fullchain.pem  cert.pem  chain.pem  privkey.pem (600)" ;;
     ru:copy_files_note) fmt="  fullchain.pem  cert.pem  chain.pem  privkey.pem (600)" ;;
+    en:keys_mismatch_warning) fmt="Certificate and private key do not match for %s - aborting to avoid installing a broken pair. Check %s manually." ;;
+    ru:keys_mismatch_warning) fmt="Сертификат и приватный ключ не совпадают для %s — прерываем, чтобы не поставить нерабочую пару. Проверьте %s вручную." ;;
 
     en:add_domain_prompt) fmt="  Enter a domain (without wildcard, e.g. example.com): " ;;
     ru:add_domain_prompt) fmt="  Введите домен (без wildcard, например example.com): " ;;
@@ -133,6 +148,15 @@ t() {
     ru:add_domain_added) fmt="Домен %s добавлен в список (сохранён в %s)." ;;
     en:add_domain_issue_now) fmt="  Issue a certificate for it right now? [y/N]: " ;;
     ru:add_domain_issue_now) fmt="  Выпустить сертификат для него прямо сейчас? [y/N]: " ;;
+
+    en:remove_domain_title) fmt="Choose a domain to remove from the list:" ;;
+    ru:remove_domain_title) fmt="Выберите домен для удаления из списка:" ;;
+    en:remove_domain_confirm) fmt="  Remove %s from the list? [y/N]: " ;;
+    ru:remove_domain_confirm) fmt="  Удалить %s из списка? [y/N]: " ;;
+    en:remove_domain_done) fmt="Domain %s removed from the list." ;;
+    ru:remove_domain_done) fmt="Домен %s удалён из списка." ;;
+    en:remove_domain_note) fmt="  Note: certificate files were not deleted. If a folder named %s still exists next to the script or in the output folder, it will be re-discovered on the next run." ;;
+    ru:remove_domain_note) fmt="  Обратите внимание: файлы сертификата не удалены. Если папка %s всё ещё существует рядом со скриптом или в папке вывода, она будет снова обнаружена при следующем запуске." ;;
 
     en:select_domain_title) fmt="Choose a domain to issue/reissue:" ;;
     ru:select_domain_title) fmt="Выберите домен для выпуска/перевыпуска:" ;;
@@ -200,12 +224,20 @@ t() {
     ru:settings_output_label) fmt="  Папка вывода сертификатов : %s" ;;
     en:settings_lang_label) fmt="  Interface language        : %s" ;;
     ru:settings_lang_label) fmt="  Язык интерфейса           : %s" ;;
+    en:settings_staging_label) fmt="  Staging mode (test certs) : %s" ;;
+    ru:settings_staging_label) fmt="  Тестовый режим (staging)  : %s" ;;
+    en:staging_on) fmt="ON" ;;
+    ru:staging_on) fmt="ВКЛ" ;;
+    en:staging_off) fmt="OFF" ;;
+    ru:staging_off) fmt="ВЫКЛ" ;;
     en:settings_opt_email) fmt="  1) Change email" ;;
     ru:settings_opt_email) fmt="  1) Изменить email" ;;
     en:settings_opt_output) fmt="  2) Change output folder" ;;
     ru:settings_opt_output) fmt="  2) Изменить папку вывода" ;;
     en:settings_opt_lang) fmt="  3) Change language" ;;
     ru:settings_opt_lang) fmt="  3) Изменить язык" ;;
+    en:settings_opt_staging) fmt="  4) Toggle staging mode (test certificates)" ;;
+    ru:settings_opt_staging) fmt="  4) Переключить тестовый режим (staging)" ;;
     en:settings_opt_back) fmt="  0) Back" ;;
     ru:settings_opt_back) fmt="  0) Назад" ;;
     en:settings_new_email_prompt) fmt="  New email: " ;;
@@ -220,6 +252,11 @@ t() {
     ru:settings_output_updated) fmt="Папка вывода обновлена: %s" ;;
     en:settings_lang_updated) fmt="Language updated: %s" ;;
     ru:settings_lang_updated) fmt="Язык обновлён: %s" ;;
+    en:settings_staging_updated) fmt="Staging mode: %s" ;;
+    ru:settings_staging_updated) fmt="Тестовый режим: %s" ;;
+
+    en:staging_banner) fmt="⚠ STAGING MODE is ON — issued certificates are TEST certificates and are not trusted by browsers." ;;
+    ru:staging_banner) fmt="⚠ ВКЛЮЧЁН ТЕСТОВЫЙ РЕЖИМ (staging) — выпущенные сертификаты ТЕСТОВЫЕ и не будут доверенными в браузерах." ;;
 
     en:invalid_choice) fmt="Invalid choice." ;;
     ru:invalid_choice) fmt="Неверный выбор." ;;
@@ -229,12 +266,14 @@ t() {
     ru:menu_opt_issue) fmt="  1) Выпустить / перевыпустить сертификат из списка" ;;
     en:menu_opt_add) fmt="  2) Add a new domain" ;;
     ru:menu_opt_add) fmt="  2) Добавить новый домен" ;;
-    en:menu_opt_iis) fmt="  3) Convert a certificate to PFX for IIS" ;;
-    ru:menu_opt_iis) fmt="  3) Конвертировать сертификат в PFX для IIS" ;;
-    en:menu_opt_refresh) fmt="  4) Refresh the table" ;;
-    ru:menu_opt_refresh) fmt="  4) Показать таблицу заново" ;;
-    en:menu_opt_settings) fmt="  5) Settings (email, output folder, language)" ;;
-    ru:menu_opt_settings) fmt="  5) Настройки (email, папка вывода, язык)" ;;
+    en:menu_opt_remove) fmt="  3) Remove a domain from the list" ;;
+    ru:menu_opt_remove) fmt="  3) Удалить домен из списка" ;;
+    en:menu_opt_iis) fmt="  4) Convert a certificate to PFX for IIS" ;;
+    ru:menu_opt_iis) fmt="  4) Конвертировать сертификат в PFX для IIS" ;;
+    en:menu_opt_refresh) fmt="  5) Refresh the table" ;;
+    ru:menu_opt_refresh) fmt="  5) Показать таблицу заново" ;;
+    en:menu_opt_settings) fmt="  6) Settings (email, output folder, language, staging)" ;;
+    ru:menu_opt_settings) fmt="  6) Настройки (email, папка вывода, язык, staging)" ;;
     en:menu_opt_exit) fmt="  0) Exit" ;;
     ru:menu_opt_exit) fmt="  0) Выход" ;;
     en:menu_prompt) fmt="  Choice: " ;;
@@ -403,6 +442,11 @@ print_header() {
 print_table() {
   STATUS_MAP=()
 
+  if [[ "$STAGING" == "true" ]]; then
+    echo
+    echo -e "${YELLOW}${BOLD}$(t staging_banner)${RESET}"
+  fi
+
   if [[ ${#DOMAINS[@]} -eq 0 ]]; then
     echo
     warn "$(t table_empty)"
@@ -455,9 +499,15 @@ issue_cert() {
     return 1
   fi
 
-  log "$(t issue_running_label) ${BOLD}${domain}${RESET} + *.${domain}"
+  local staging_tag=""
+  [[ "$STAGING" == "true" ]] && staging_tag="$(t issue_staging_tag)"
+
+  log "$(t issue_running_label) ${BOLD}${domain}${RESET} + *.${domain}${YELLOW}${staging_tag}${RESET}"
   echo -e "${DIM}$(t issue_dns_hint "$domain")${RESET}"
   echo
+
+  local staging_flag=()
+  [[ "$STAGING" == "true" ]] && staging_flag=(--staging)
 
   $CERTBOT_BIN certonly \
     --manual \
@@ -466,6 +516,7 @@ issue_cert() {
     --email "$EMAIL" \
     --expand \
     --cert-name "$domain" \
+    "${staging_flag[@]}" \
     -d "$domain" \
     -d "*.${domain}"
 
@@ -493,6 +544,11 @@ copy_cert() {
   chown -R "$OUTPUT_USER" "$dst" 2>/dev/null || true
   chmod 644 "${dst}/fullchain.pem" "${dst}/cert.pem" "${dst}/chain.pem"
   chmod 600 "${dst}/privkey.pem"
+
+  if ! keys_match "${dst}/cert.pem" "${dst}/privkey.pem"; then
+    warn "$(t keys_mismatch_warning "$domain" "$dst")"
+    return 1
+  fi
 
   success "$(t copy_done "$dst")"
   echo -e "${DIM}$(t copy_files_note)${RESET}"
@@ -529,6 +585,53 @@ add_domain() {
     issue_cert "$new_domain" || return
     copy_cert  "$new_domain" || return
   fi
+}
+
+remove_domain() {
+  if [[ ${#DOMAINS[@]} -eq 0 ]]; then
+    warn "$(t table_empty)"
+    return
+  fi
+
+  echo -e "${BOLD}$(t remove_domain_title)${RESET}"
+  echo
+
+  local i=0
+  for domain in "${DOMAINS[@]}"; do
+    printf "  %2s) %s\n" "$((i+1))" "$domain"
+    i=$((i + 1))
+  done
+  echo
+
+  local choice
+  read -rp "$(t select_domain_prompt)" choice
+  [[ "$choice" == "0" ]] && return
+  if ! [[ "$choice" =~ ^[0-9]+$ ]] || (( choice < 1 || choice > ${#DOMAINS[@]} )); then
+    warn "$(t select_domain_range_err "${#DOMAINS[@]}")"
+    return
+  fi
+
+  local target="${DOMAINS[$((choice-1))]}"
+  local confirm
+  read -rp "$(t remove_domain_confirm "$target")" confirm
+  [[ "$confirm" =~ ^[Yy]$ ]] || { warn "$(t cancelled)"; return; }
+
+  if [[ -f "$DOMAINS_FILE" ]]; then
+    local tmp
+    tmp="$(mktemp)"
+    grep -vFx "$target" "$DOMAINS_FILE" > "$tmp" || true
+    mv "$tmp" "$DOMAINS_FILE"
+    chown "$OUTPUT_USER" "$DOMAINS_FILE" 2>/dev/null || true
+  fi
+
+  local new_domains=() d
+  for d in "${DOMAINS[@]}"; do
+    [[ "$d" == "$target" ]] || new_domains+=("$d")
+  done
+  DOMAINS=("${new_domains[@]}")
+
+  success "$(t remove_domain_done "$target")"
+  warn "$(t remove_domain_note "$target")"
 }
 
 select_domain() {
@@ -627,6 +730,11 @@ convert_to_iis() {
     return 1
   fi
 
+  if ! keys_match "${cert_dir}/cert.pem" "${cert_dir}/privkey.pem"; then
+    warn "$(t keys_mismatch_warning "$domain" "$cert_dir")"
+    return 1
+  fi
+
   local dst="${OUTPUT_DIR}/${domain}"
   local pfx_path="${dst}/${domain}.pfx"
   mkdir -p "$dst"
@@ -672,10 +780,12 @@ settings_menu() {
     echo "$(t settings_email_label "$EMAIL")"
     echo "$(t settings_output_label "$OUTPUT_DIR")"
     echo "$(t settings_lang_label "$UI_LANG")"
+    echo "$(t settings_staging_label "$([[ "$STAGING" == "true" ]] && t staging_on || t staging_off)")"
     echo
     echo "$(t settings_opt_email)"
     echo "$(t settings_opt_output)"
     echo "$(t settings_opt_lang)"
+    echo "$(t settings_opt_staging)"
     echo "$(t settings_opt_back)"
     echo
     local choice
@@ -705,6 +815,11 @@ settings_menu() {
         select_language
         success "$(t settings_lang_updated "$UI_LANG")"
         ;;
+      4)
+        if [[ "$STAGING" == "true" ]]; then STAGING="false"; else STAGING="true"; fi
+        save_config
+        success "$(t settings_staging_updated "$([[ "$STAGING" == "true" ]] && t staging_on || t staging_off)")"
+        ;;
       0) return ;;
       *) warn "$(t invalid_choice)" ;;
     esac
@@ -715,6 +830,7 @@ main_menu() {
   echo -e "${BOLD}$(t menu_title)${RESET}"
   echo "$(t menu_opt_issue)"
   echo "$(t menu_opt_add)"
+  echo "$(t menu_opt_remove)"
   echo "$(t menu_opt_iis)"
   echo "$(t menu_opt_refresh)"
   echo "$(t menu_opt_settings)"
@@ -725,9 +841,10 @@ main_menu() {
   case "$action" in
     1) select_domain ;;
     2) add_domain ;;
-    3) convert_to_iis_menu ;;
-    4) print_table ;;
-    5) settings_menu ;;
+    3) remove_domain ;;
+    4) convert_to_iis_menu ;;
+    5) print_table ;;
+    6) settings_menu ;;
     0) exit 0 ;;
     *) warn "$(t invalid_choice)" ;;
   esac

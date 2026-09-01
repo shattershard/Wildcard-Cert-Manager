@@ -16,9 +16,11 @@ An interactive script for issuing and managing **wildcard Let's Encrypt certific
 Both scripts offer the same menu-driven workflow:
 
 - 📜 Issues/reissues wildcard certificates (`example.com` + `*.example.com`) using the DNS-01 challenge
-- 📋 Keeps a list of managed domains (auto-discovered from folders or added manually)
+- 📋 Keeps a list of managed domains (auto-discovered from folders, added manually, or removed from the list when no longer needed)
 - 📊 Shows a status table with expiry countdown and color-coded warnings (valid / expiring soon / critical / expired)
 - 📁 Copies issued certificates (`fullchain.pem`, `cert.pem`, `chain.pem`, `privkey.pem`) to a configurable output folder with correct permissions
+- ✅ Verifies the certificate and private key actually match before copying or building a PFX — refuses to install a broken pair
+- 🧪 Optional **staging mode** — issue test certificates against Let's Encrypt's staging environment, so trying things out doesn't burn your real rate limit (5 certs/domain/week)
 - 🔁 Converts a certificate to `.pfx` (PKCS#12) for IIS, with an optional randomly generated password
 - 🌍 Supports English and Russian interface language, switchable at any time
 
@@ -49,7 +51,7 @@ sudo apt install certbot openssl
 
 - PowerShell 5.1 (built into Windows) or PowerShell 7+
 - [certbot for Windows](https://certbot.eff.org/instructions)
-- `openssl` — only needed for the PFX/IIS conversion step (item 3 in the menu)
+- `openssl` — used to verify the key/cert pair matches and to build the PFX for IIS
 
 ```powershell
 # via Chocolatey
@@ -80,14 +82,17 @@ No Administrator shell required — by default certbot's config/work/logs folder
 
 1. Issue / reissue a certificate from the list
 2. Add a new domain
-3. Convert a certificate to PFX for IIS
-4. Refresh the table
-5. Settings (email, output folder, language)
+3. Remove a domain from the list
+4. Convert a certificate to PFX for IIS
+5. Refresh the table
+6. Settings (email, output folder, language, staging mode)
 0. Exit
 
 *(`0` is always "exit" / "back" in every menu.)*
 
 On first run you'll be asked to choose an interface language, then guided to set your email and add your first domain.
+
+Removing a domain (item 3) only takes it off the tracked list and rewrites `domains.conf` — it does **not** delete any certificate files. If a folder named after that domain still exists next to the script or in the output folder, it will be auto-discovered and re-added on the next run; delete or move that folder too if you want it gone for good.
 
 ### ⚙️ Configuration & generated files
 
@@ -111,6 +116,7 @@ You can override paths via environment variables:
 - Certificates are issued via the **manual DNS-01 challenge** — you'll be prompted to add a `_acme-challenge.<domain>` TXT record to your DNS during issuance.
 - Output files land in `~/ssl/<domain>/` (or `%USERPROFILE%\ssl\<domain>\` on Windows) by default — configurable in Settings.
 - The `.pfx` password is shown once and not stored anywhere — save it immediately.
+- **Staging mode** (Settings → item 4) adds `--staging` to every certbot call. Staging certificates are signed by a test CA and will show as untrusted in browsers — use it only to test the workflow, not for real traffic. Toggle it off before issuing production certificates.
 
 ---
 
@@ -121,9 +127,11 @@ You can override paths via environment variables:
 Оба скрипта предлагают одинаковый интерактивный сценарий:
 
 - 📜 Выпускают/перевыпускают wildcard-сертификаты (`example.com` + `*.example.com`) через DNS-01 challenge
-- 📋 Хранят список управляемых доменов (автоматически обнаруживают папки или добавляют вручную)
+- 📋 Хранят список управляемых доменов (автоматически обнаруживают папки, добавляют вручную, а ненужные можно удалить из списка)
 - 📊 Показывают таблицу статусов с обратным отсчётом до истечения и цветовой индикацией (действует / скоро истекает / критично / истёк)
 - 📁 Копируют выпущенные сертификаты (`fullchain.pem`, `cert.pem`, `chain.pem`, `privkey.pem`) в настраиваемую папку вывода с правильными правами доступа
+- ✅ Проверяют, что сертификат и приватный ключ действительно образуют пару, перед копированием или сборкой PFX — не дадут поставить нерабочую связку
+- 🧪 Опциональный **тестовый режим (staging)** — выпуск тестовых сертификатов через staging-окружение Let's Encrypt, чтобы эксперименты не тратили реальный лимит (5 сертификатов/домен в неделю)
 - 🔁 Конвертируют сертификат в `.pfx` (PKCS#12) для IIS, с опциональной генерацией случайного пароля
 - 🌍 Поддерживают русский и английский интерфейс, язык можно переключить в любой момент
 
@@ -154,7 +162,7 @@ sudo apt install certbot openssl
 
 - PowerShell 5.1 (встроен в Windows) или PowerShell 7+
 - [certbot для Windows](https://certbot.eff.org/instructions)
-- `openssl` — нужен только для шага конвертации в PFX для IIS (пункт 3 в меню)
+- `openssl` — используется для проверки соответствия ключа и сертификата, а также для сборки PFX для IIS
 
 ```powershell
 # через Chocolatey
@@ -185,14 +193,17 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 1. Выпустить / перевыпустить сертификат из списка
 2. Добавить новый домен
-3. Конвертировать сертификат в PFX для IIS
-4. Показать таблицу заново
-5. Настройки (email, папка вывода, язык)
+3. Удалить домен из списка
+4. Конвертировать сертификат в PFX для IIS
+5. Показать таблицу заново
+6. Настройки (email, папка вывода, язык, тестовый режим)
 0. Выход
 
 *(`0` — всегда «выход» / «назад» в любом меню.)*
 
 При первом запуске нужно будет выбрать язык интерфейса, затем указать email и добавить первый домен.
+
+Удаление домена (пункт 3) только убирает его из отслеживаемого списка и переписывает `domains.conf` — файлы сертификата при этом **не удаляются**. Если папка с именем этого домена всё ещё лежит рядом со скриптом или в папке вывода, она будет автоматически обнаружена и снова добавлена в список при следующем запуске; чтобы избавиться от домена насовсем, удалите или переместите и эту папку.
 
 ### ⚙️ Конфигурация и генерируемые файлы
 
@@ -216,3 +227,4 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 - Сертификаты выпускаются через **ручной DNS-01 challenge** — во время выпуска нужно будет добавить TXT-запись `_acme-challenge.<домен>` в DNS.
 - По умолчанию файлы сохраняются в `~/ssl/<домен>/` (или `%USERPROFILE%\ssl\<домен>\` на Windows) — можно изменить в Настройках.
 - Пароль от `.pfx` показывается один раз и больше нигде не сохраняется — запишите его сразу.
+- **Тестовый режим (staging)** (Настройки → пункт 4) добавляет `--staging` к каждому вызову certbot. Тестовые сертификаты подписаны тестовым CA и будут показываться браузером как недоверенные — используйте режим только для проверки сценария, не для реального трафика. Не забудьте выключить его перед выпуском боевых сертификатов.
