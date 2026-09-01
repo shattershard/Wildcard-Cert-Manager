@@ -63,8 +63,8 @@ keys_match() {
   local cert="$1" key="$2"
   [[ -f "$cert" && -f "$key" ]] || return 1
   local cert_pub key_pub
-  cert_pub=$(openssl x509 -in "$cert" -pubkey -noout 2>/dev/null | openssl md5 2>/dev/null)
-  key_pub=$(openssl pkey -in "$key" -pubout 2>/dev/null | openssl md5 2>/dev/null)
+  cert_pub=$(openssl x509 -in "$cert" -pubkey -noout 2>/dev/null | openssl md5 2>/dev/null) || true
+  key_pub=$(openssl pkey -in "$key" -pubout 2>/dev/null | openssl md5 2>/dev/null) || true
   [[ -n "$cert_pub" && "$cert_pub" == "$key_pub" ]]
 }
 
@@ -129,8 +129,6 @@ t() {
 
     en:live_check_title) fmt="Checking live certificates on the sites (connecting to port 443)..." ;;
     ru:live_check_title) fmt="Проверяем сертификаты на самих сайтах (подключение к порту 443)..." ;;
-    en:live_check_no_timeout) fmt="Note: 'timeout'/'gtimeout' not found - an unreachable domain may take a while to fail." ;;
-    ru:live_check_no_timeout) fmt="Обратите внимание: не найдены 'timeout'/'gtimeout' — проверка недоступного домена может занять много времени." ;;
     en:live_checking) fmt="Checking %s..." ;;
     ru:live_checking) fmt="Проверяем %s..." ;;
     en:live_table_col_status) fmt="LIVE STATUS" ;;
@@ -455,29 +453,35 @@ days_left() {
   [[ -f "$cert" ]] || { echo "MISSING"; return; }
 
   local expiry
-  expiry=$(openssl x509 -enddate -noout -in "$cert" 2>/dev/null | cut -d= -f2)
+  expiry=$(openssl x509 -enddate -noout -in "$cert" 2>/dev/null | cut -d= -f2) || true
   days_from_enddate "$expiry"
 }
 
-TIMEOUT_BIN=""
-if command -v timeout >/dev/null 2>&1; then
-  TIMEOUT_BIN="timeout"
-elif command -v gtimeout >/dev/null 2>&1; then
-  TIMEOUT_BIN="gtimeout"
-fi
 LIVE_CHECK_TIMEOUT="${LIVE_CHECK_TIMEOUT:-6}"
 
+# Portable timeout wrapper - doesn't depend on GNU coreutils `timeout`/`gtimeout`,
+# which aren't present on a stock macOS install. Runs "$@" in the background and
+# kills it if it's still running after LIVE_CHECK_TIMEOUT seconds.
 run_with_timeout() {
-  if [[ -n "$TIMEOUT_BIN" ]]; then
-    "$TIMEOUT_BIN" "$LIVE_CHECK_TIMEOUT" "$@"
-  else
-    "$@"
-  fi
+  "$@" &
+  local cmd_pid=$!
+
+  ( sleep "$LIVE_CHECK_TIMEOUT"; kill -9 "$cmd_pid" 2>/dev/null ) &
+  local watcher_pid=$!
+  disown "$watcher_pid" 2>/dev/null
+
+  wait "$cmd_pid" 2>/dev/null
+  local status=$?
+
+  kill "$watcher_pid" 2>/dev/null
+  wait "$watcher_pid" 2>/dev/null
+
+  return "$status"
 }
 
 fetch_live_cert() {
   local domain="$1"
-  { echo | run_with_timeout openssl s_client -connect "${domain}:443" -servername "$domain" 2>/dev/null; } | openssl x509 2>/dev/null
+  { echo | run_with_timeout openssl s_client -connect "${domain}:443" -servername "$domain" 2>/dev/null; } | openssl x509 2>/dev/null || true
 }
 
 live_days_left() {
@@ -485,7 +489,7 @@ live_days_left() {
   [[ -z "$cert_pem" ]] && { echo "UNREACHABLE"; return; }
 
   local expiry
-  expiry=$(echo "$cert_pem" | openssl x509 -enddate -noout 2>/dev/null | cut -d= -f2)
+  expiry=$(echo "$cert_pem" | openssl x509 -enddate -noout 2>/dev/null | cut -d= -f2) || true
   [[ -z "$expiry" ]] && { echo "ERROR"; return; }
   days_from_enddate "$expiry"
 }
@@ -860,7 +864,6 @@ check_live_menu() {
 
   echo
   echo -e "${BOLD}$(t live_check_title)${RESET}"
-  [[ -z "$TIMEOUT_BIN" ]] && warn "$(t live_check_no_timeout)"
   echo
 
   local live_status=() live_color=() live_expires=() live_deployed=() live_deployed_color=()
@@ -893,8 +896,8 @@ check_live_menu() {
       deployed="?"; deployed_color=$DIM
     else
       local live_fp local_fp
-      live_fp=$(echo "$cert_pem" | openssl x509 -noout -fingerprint -sha256 2>/dev/null)
-      local_fp=$(openssl x509 -in "$local_cert" -noout -fingerprint -sha256 2>/dev/null)
+      live_fp=$(echo "$cert_pem" | openssl x509 -noout -fingerprint -sha256 2>/dev/null) || true
+      local_fp=$(openssl x509 -in "$local_cert" -noout -fingerprint -sha256 2>/dev/null) || true
       if [[ -n "$live_fp" && "$live_fp" == "$local_fp" ]]; then
         deployed="$(t deployed_yes)"; deployed_color=$GREEN
       else
