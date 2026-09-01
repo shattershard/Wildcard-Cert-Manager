@@ -102,6 +102,23 @@ $Strings = @{
   'en:status_valid'         = 'VALID'
   'ru:status_valid'         = 'ДЕЙСТВУЕТ'
 
+  'en:live_check_title' = 'Checking live certificates on the sites (connecting to port 443)...'
+  'ru:live_check_title' = 'Проверяем сертификаты на самих сайтах (подключение к порту 443)...'
+  'en:live_checking' = 'Checking {0}...'
+  'ru:live_checking' = 'Проверяем {0}...'
+  'en:live_table_col_status' = 'LIVE STATUS'
+  'ru:live_table_col_status' = 'СТАТУС НА САЙТЕ'
+  'en:live_table_col_deployed' = 'DEPLOYED'
+  'ru:live_table_col_deployed' = 'РАЗВЁРНУТ'
+  'en:live_status_unreachable' = 'UNREACHABLE'
+  'ru:live_status_unreachable' = 'НЕДОСТУПЕН'
+  'en:deployed_yes' = 'YES'
+  'ru:deployed_yes' = 'ДА'
+  'en:deployed_no' = 'NO'
+  'ru:deployed_no' = 'НЕТ'
+  'en:live_deployed_legend' = '  DEPLOYED: does the live certificate match the one issued locally? "?" = no local copy to compare against.'
+  'ru:live_deployed_legend' = '  РАЗВЁРНУТ: совпадает ли сертификат на сайте с тем, что выпущен локально? "?" — нет локальной копии для сравнения.'
+
   'en:issue_email_missing' = "Email for Let's Encrypt is not set. Configure it in item 5 (Settings)."
   'ru:issue_email_missing' = 'Email для Lets Encrypt не задан. Настройте его в пункте 5 (Настройки).'
   'en:issue_running_label' = 'Running certbot for'
@@ -265,10 +282,12 @@ $Strings = @{
   'ru:menu_opt_remove'   = '  3) Удалить домен из списка'
   'en:menu_opt_iis'      = '  4) Convert a certificate to PFX for IIS'
   'ru:menu_opt_iis'      = '  4) Конвертировать сертификат в PFX для IIS'
-  'en:menu_opt_refresh'  = '  5) Refresh the table'
-  'ru:menu_opt_refresh'  = '  5) Показать таблицу заново'
-  'en:menu_opt_settings' = '  6) Settings (email, output folder, language, staging)'
-  'ru:menu_opt_settings' = '  6) Настройки (email, папка вывода, язык, staging)'
+  'en:menu_opt_live'     = '  5) Check live certificates on the sites'
+  'ru:menu_opt_live'     = '  5) Проверить сертификаты на самих сайтах'
+  'en:menu_opt_refresh'  = '  6) Refresh the table'
+  'ru:menu_opt_refresh'  = '  6) Показать таблицу заново'
+  'en:menu_opt_settings' = '  7) Settings (email, output folder, language, staging)'
+  'ru:menu_opt_settings' = '  7) Настройки (email, папка вывода, язык, staging)'
   'en:menu_opt_exit'     = '  0) Exit'
   'ru:menu_opt_exit'     = '  0) Выход'
   'en:menu_prompt' = '  Choice'
@@ -410,6 +429,28 @@ function Get-DaysLeft {
     return [math]::Floor(($x509.NotAfter - (Get-Date)).TotalDays)
   } catch {
     return 'ERROR'
+  }
+}
+
+function Get-LiveCertificate {
+  param([string]$DomainName, [int]$TimeoutSeconds = 6)
+
+  $tcp = New-Object System.Net.Sockets.TcpClient
+  try {
+    $connectTask = $tcp.ConnectAsync($DomainName, 443)
+    if (-not $connectTask.Wait([TimeSpan]::FromSeconds($TimeoutSeconds))) { return $null }
+    if ($connectTask.IsFaulted -or -not $tcp.Connected) { return $null }
+
+    $callback = { param($sender, $certificate, $chain, $sslPolicyErrors) return $true }
+    $sslStream = New-Object System.Net.Security.SslStream($tcp.GetStream(), $false, $callback)
+    $sslStream.AuthenticateAsClient($DomainName)
+    $remoteCert = $sslStream.RemoteCertificate
+    if (-not $remoteCert) { return $null }
+    return New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($remoteCert)
+  } catch {
+    return $null
+  } finally {
+    $tcp.Close()
   }
 }
 
@@ -727,6 +768,67 @@ function Convert-ToIis {
   Write-Host (T iis_binding_hint)
 }
 
+function Invoke-CheckLiveMenu {
+  if ($Domains.Count -eq 0) { Warn-Msg (T table_empty); return }
+
+  Write-Host ''
+  Write-Host (T live_check_title)
+  Write-Host ''
+
+  $rows = @()
+
+  foreach ($domain in $Domains) {
+    Log "$(T live_checking @($domain))"
+
+    $liveCert = Get-LiveCertificate -DomainName $domain
+    $color = 'Gray'; $status = ''; $expires = ''
+    $deployed = '?'; $deployedColor = 'DarkGray'
+
+    if (-not $liveCert) {
+      $status = T live_status_unreachable; $color = 'Red'; $expires = '-'
+    } else {
+      $days = [math]::Floor(($liveCert.NotAfter - (Get-Date)).TotalDays)
+      if ($days -lt 0) { $status = T status_expired; $color = 'Red'; $expires = "${days}d" }
+      elseif ($days -le 14) { $status = T status_critical; $color = 'Red'; $expires = "${days}d" }
+      elseif ($days -le 30) { $status = T status_expiring_soon; $color = 'Yellow'; $expires = "${days}d" }
+      else { $status = T status_valid; $color = 'Green'; $expires = "${days}d" }
+
+      $localCertPath = Join-Path (Join-Path $OutputDir $domain) 'cert.pem'
+      if (Test-Path $localCertPath) {
+        try {
+          $localCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($localCertPath)
+          if ($localCert.Thumbprint -eq $liveCert.Thumbprint) {
+            $deployed = T deployed_yes; $deployedColor = 'Green'
+          } else {
+            $deployed = T deployed_no; $deployedColor = 'Red'
+          }
+        } catch {}
+      }
+    }
+
+    $rows += [pscustomobject]@{ Domain = $domain; Status = $status; Color = $color; Expires = $expires; Deployed = $deployed; DeployedColor = $deployedColor }
+  }
+
+  Write-Host ''
+  $sep = '  +----+------------------------------+----------------+--------------+------------+'
+  Write-Host $sep
+  Write-Host ('  | {0,-2} | {1,-28} | {2,-14} | {3,-12} | {4,-10} |' -f '#', (T table_col_domain), (T live_table_col_status), (T table_col_expires), (T live_table_col_deployed))
+  Write-Host $sep
+
+  for ($i = 0; $i -lt $rows.Count; $i++) {
+    $r = $rows[$i]
+    Write-Host ('  | {0,-2} | {1,-28} | ' -f ($i + 1), $r.Domain) -NoNewline
+    Write-Host ('{0,-14}' -f $r.Status) -ForegroundColor $r.Color -NoNewline
+    Write-Host (' | {0,-12} | ' -f $r.Expires) -NoNewline
+    Write-Host ('{0,-10}' -f $r.Deployed) -ForegroundColor $r.DeployedColor -NoNewline
+    Write-Host ' |'
+  }
+
+  Write-Host $sep
+  Write-Host (T live_deployed_legend)
+  Write-Host ''
+}
+
 function Show-SettingsMenu {
   while ($true) {
     Clear-Screen
@@ -795,6 +897,7 @@ function Show-MainMenu {
   Write-Host (T menu_opt_add)
   Write-Host (T menu_opt_remove)
   Write-Host (T menu_opt_iis)
+  Write-Host (T menu_opt_live)
   Write-Host (T menu_opt_refresh)
   Write-Host (T menu_opt_settings)
   Write-Host (T menu_opt_exit)
@@ -805,8 +908,9 @@ function Show-MainMenu {
     '2' { Add-Domain }
     '3' { Remove-Domain }
     '4' { Invoke-ConvertToIisMenu }
-    '5' { Show-Table }
-    '6' { Show-SettingsMenu }
+    '5' { Invoke-CheckLiveMenu }
+    '6' { Show-Table }
+    '7' { Show-SettingsMenu }
     '0' { exit 0 }
     default { Warn-Msg (T invalid_choice) }
   }

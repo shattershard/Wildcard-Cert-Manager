@@ -32,15 +32,19 @@ warn()    { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
 success() { echo -e "${GREEN}[ OK ]${RESET}  $*"; }
 die()     { echo -e "${RED}[ERR ]${RESET}  $*" >&2; exit 1; }
 
+is_truthy() {
+  [[ "$1" =~ ^([1Yy]|[Tt]rue|[Oo]n|[Yy]es)$ ]]
+}
+
 NO_CLEAR="${NO_CLEAR:-false}"
 
 clear_screen() {
-  [[ "$NO_CLEAR" == "true" ]] && return
+  is_truthy "$NO_CLEAR" && return
   clear 2>/dev/null || printf '\033[2J\033[H'
 }
 
 press_enter() {
-  [[ "$NO_CLEAR" == "true" ]] && return
+  is_truthy "$NO_CLEAR" && return
   echo
   read -rp "$(t press_enter)"
 }
@@ -122,6 +126,27 @@ t() {
     ru:status_expiring_soon) fmt="СКОРО ИСТЕКАЕТ" ;;
     en:status_valid) fmt="VALID" ;;
     ru:status_valid) fmt="ДЕЙСТВУЕТ" ;;
+
+    en:live_check_title) fmt="Checking live certificates on the sites (connecting to port 443)..." ;;
+    ru:live_check_title) fmt="Проверяем сертификаты на самих сайтах (подключение к порту 443)..." ;;
+    en:live_check_no_timeout) fmt="Note: 'timeout'/'gtimeout' not found - an unreachable domain may take a while to fail." ;;
+    ru:live_check_no_timeout) fmt="Обратите внимание: не найдены 'timeout'/'gtimeout' — проверка недоступного домена может занять много времени." ;;
+    en:live_checking) fmt="Checking %s..." ;;
+    ru:live_checking) fmt="Проверяем %s..." ;;
+    en:live_table_col_status) fmt="LIVE STATUS" ;;
+    ru:live_table_col_status) fmt="СТАТУС НА САЙТЕ" ;;
+    en:live_table_col_deployed) fmt="DEPLOYED" ;;
+    ru:live_table_col_deployed) fmt="РАЗВЁРНУТ" ;;
+    en:live_status_unreachable) fmt="UNREACHABLE" ;;
+    ru:live_status_unreachable) fmt="НЕДОСТУПЕН" ;;
+    en:live_status_no_cert) fmt="NO CERT" ;;
+    ru:live_status_no_cert) fmt="НЕТ СЕРТ." ;;
+    en:deployed_yes) fmt="YES" ;;
+    ru:deployed_yes) fmt="ДА" ;;
+    en:deployed_no) fmt="NO" ;;
+    ru:deployed_no) fmt="НЕТ" ;;
+    en:live_deployed_legend) fmt="  DEPLOYED: does the live certificate match the one issued locally? \"?\" = no local copy to compare against." ;;
+    ru:live_deployed_legend) fmt="  РАЗВЁРНУТ: совпадает ли сертификат на сайте с тем, что выпущен локально? «?» — нет локальной копии для сравнения." ;;
 
     en:issue_email_missing) fmt="Email for Let's Encrypt is not set. Configure it in item 5 (Settings)." ;;
     ru:issue_email_missing) fmt="Email для Let's Encrypt не задан. Настройте его в пункте 5 (Настройки)." ;;
@@ -286,10 +311,12 @@ t() {
     ru:menu_opt_remove) fmt="  3) Удалить домен из списка" ;;
     en:menu_opt_iis) fmt="  4) Convert a certificate to PFX for IIS" ;;
     ru:menu_opt_iis) fmt="  4) Конвертировать сертификат в PFX для IIS" ;;
-    en:menu_opt_refresh) fmt="  5) Refresh the table" ;;
-    ru:menu_opt_refresh) fmt="  5) Показать таблицу заново" ;;
-    en:menu_opt_settings) fmt="  6) Settings (email, output folder, language, staging)" ;;
-    ru:menu_opt_settings) fmt="  6) Настройки (email, папка вывода, язык, staging)" ;;
+    en:menu_opt_live) fmt="  5) Check live certificates on the sites" ;;
+    ru:menu_opt_live) fmt="  5) Проверить сертификаты на самих сайтах" ;;
+    en:menu_opt_refresh) fmt="  6) Refresh the table" ;;
+    ru:menu_opt_refresh) fmt="  6) Показать таблицу заново" ;;
+    en:menu_opt_settings) fmt="  7) Settings (email, output folder, language, staging)" ;;
+    ru:menu_opt_settings) fmt="  7) Настройки (email, папка вывода, язык, staging)" ;;
     en:menu_opt_exit) fmt="  0) Exit" ;;
     ru:menu_opt_exit) fmt="  0) Выход" ;;
     en:menu_prompt) fmt="  Choice: " ;;
@@ -405,14 +432,8 @@ discover_domain_dirs() {
 discover_domain_dirs "$SCRIPT_DIR"
 discover_domain_dirs "$OUTPUT_DIR"
 
-days_left() {
-  local domain="$1"
-  local cert="${OUTPUT_DIR}/${domain}/cert.pem"
-
-  [[ -f "$cert" ]] || { echo "MISSING"; return; }
-
-  local expiry
-  expiry=$(openssl x509 -enddate -noout -in "$cert" 2>/dev/null | cut -d= -f2)
+days_from_enddate() {
+  local expiry="$1"
   [[ -z "$expiry" ]] && { echo "ERROR"; return; }
 
   local expiry_clean="${expiry% GMT}"
@@ -425,6 +446,48 @@ days_left() {
     || { echo "ERROR"; return; }
 
   echo $(( (exp_epoch - now_epoch) / 86400 ))
+}
+
+days_left() {
+  local domain="$1"
+  local cert="${OUTPUT_DIR}/${domain}/cert.pem"
+
+  [[ -f "$cert" ]] || { echo "MISSING"; return; }
+
+  local expiry
+  expiry=$(openssl x509 -enddate -noout -in "$cert" 2>/dev/null | cut -d= -f2)
+  days_from_enddate "$expiry"
+}
+
+TIMEOUT_BIN=""
+if command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_BIN="timeout"
+elif command -v gtimeout >/dev/null 2>&1; then
+  TIMEOUT_BIN="gtimeout"
+fi
+LIVE_CHECK_TIMEOUT="${LIVE_CHECK_TIMEOUT:-6}"
+
+run_with_timeout() {
+  if [[ -n "$TIMEOUT_BIN" ]]; then
+    "$TIMEOUT_BIN" "$LIVE_CHECK_TIMEOUT" "$@"
+  else
+    "$@"
+  fi
+}
+
+fetch_live_cert() {
+  local domain="$1"
+  { echo | run_with_timeout openssl s_client -connect "${domain}:443" -servername "$domain" 2>/dev/null; } | openssl x509 2>/dev/null
+}
+
+live_days_left() {
+  local cert_pem="$1"
+  [[ -z "$cert_pem" ]] && { echo "UNREACHABLE"; return; }
+
+  local expiry
+  expiry=$(echo "$cert_pem" | openssl x509 -enddate -noout 2>/dev/null | cut -d= -f2)
+  [[ -z "$expiry" ]] && { echo "ERROR"; return; }
+  days_from_enddate "$expiry"
 }
 
 visual_len() {
@@ -789,6 +852,79 @@ convert_to_iis() {
   echo -e "${DIM}$(t iis_binding_hint)${RESET}"
 }
 
+check_live_menu() {
+  if [[ ${#DOMAINS[@]} -eq 0 ]]; then
+    warn "$(t table_empty)"
+    return
+  fi
+
+  echo
+  echo -e "${BOLD}$(t live_check_title)${RESET}"
+  [[ -z "$TIMEOUT_BIN" ]] && warn "$(t live_check_no_timeout)"
+  echo
+
+  local live_status=() live_color=() live_expires=() live_deployed=() live_deployed_color=()
+  local domain
+
+  for domain in "${DOMAINS[@]}"; do
+    log "$(t live_checking "$domain")"
+
+    local cert_pem days color status expires deployed deployed_color
+
+    cert_pem="$(fetch_live_cert "$domain")"
+    days=$(live_days_left "$cert_pem")
+
+    if [[ "$days" == "UNREACHABLE" ]]; then
+      status="$(t live_status_unreachable)"; color=$RED; expires="-"
+    elif [[ "$days" == "ERROR" ]]; then
+      status="$(t live_status_no_cert)"; color=$RED; expires="-"
+    elif (( days < 0 )); then
+      status="$(t status_expired)"; color=$RED; expires="${days}d"
+    elif (( days <= 14 )); then
+      status="$(t status_critical)"; color=$RED; expires="${days}d"
+    elif (( days <= 30 )); then
+      status="$(t status_expiring_soon)"; color=$YELLOW; expires="${days}d"
+    else
+      status="$(t status_valid)"; color=$GREEN; expires="${days}d"
+    fi
+
+    local local_cert="${OUTPUT_DIR}/${domain}/cert.pem"
+    if [[ -z "$cert_pem" || ! -f "$local_cert" ]]; then
+      deployed="?"; deployed_color=$DIM
+    else
+      local live_fp local_fp
+      live_fp=$(echo "$cert_pem" | openssl x509 -noout -fingerprint -sha256 2>/dev/null)
+      local_fp=$(openssl x509 -in "$local_cert" -noout -fingerprint -sha256 2>/dev/null)
+      if [[ -n "$live_fp" && "$live_fp" == "$local_fp" ]]; then
+        deployed="$(t deployed_yes)"; deployed_color=$GREEN
+      else
+        deployed="$(t deployed_no)"; deployed_color=$RED
+      fi
+    fi
+
+    live_status+=("$status"); live_color+=("$color")
+    live_expires+=("$expires")
+    live_deployed+=("$deployed"); live_deployed_color+=("$deployed_color")
+  done
+
+  echo
+  echo -e "${BOLD}  +----+------------------------------+----------------+--------------+------------+${RESET}"
+  printf "${BOLD}  | %-2s | %s | %s | %s | %s |${RESET}\n" \
+    "#" "$(pad "$(t table_col_domain)" 28)" "$(pad "$(t live_table_col_status)" 14)" "$(pad "$(t table_col_expires)" 12)" "$(pad "$(t live_table_col_deployed)" 10)"
+  echo -e "${BOLD}  +----+------------------------------+----------------+--------------+------------+${RESET}"
+
+  local i=0
+  for domain in "${DOMAINS[@]}"; do
+    printf "  ${BOLD}|${RESET} ${DIM}%-2s${RESET} ${BOLD}|${RESET} %-28s ${BOLD}|${RESET} ${live_color[$i]}%s${RESET} ${BOLD}|${RESET} %-12s ${BOLD}|${RESET} ${live_deployed_color[$i]}%s${RESET} ${BOLD}|${RESET}\n" \
+      "$((i+1))" "$domain" "$(pad "${live_status[$i]}" 14)" "${live_expires[$i]}" "$(pad "${live_deployed[$i]}" 10)"
+    i=$((i + 1))
+  done
+
+  echo -e "${BOLD}  +----+------------------------------+----------------+--------------+------------+${RESET}"
+  echo -e "${DIM}$(t live_deployed_legend)${RESET}"
+  echo
+}
+
 settings_menu() {
   while true; do
     clear_screen
@@ -851,6 +987,7 @@ main_menu() {
   echo "$(t menu_opt_add)"
   echo "$(t menu_opt_remove)"
   echo "$(t menu_opt_iis)"
+  echo "$(t menu_opt_live)"
   echo "$(t menu_opt_refresh)"
   echo "$(t menu_opt_settings)"
   echo "$(t menu_opt_exit)"
@@ -862,8 +999,9 @@ main_menu() {
     2) add_domain ;;
     3) remove_domain ;;
     4) convert_to_iis_menu ;;
-    5) print_table ;;
-    6) settings_menu ;;
+    5) check_live_menu ;;
+    6) print_table ;;
+    7) settings_menu ;;
     0) exit 0 ;;
     *) warn "$(t invalid_choice)" ;;
   esac

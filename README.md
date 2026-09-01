@@ -20,9 +20,14 @@ Both scripts offer the same menu-driven workflow:
 - 📊 Shows a status table with expiry countdown and color-coded warnings (valid / expiring soon / critical / expired)
 - 📁 Copies issued certificates (`fullchain.pem`, `cert.pem`, `chain.pem`, `privkey.pem`) to a configurable output folder with correct permissions
 - ✅ Verifies the certificate and private key actually match before copying or building a PFX — refuses to install a broken pair
+- 🌐 Checks the certificate actually being served by each site (connects on port 443) and flags when it doesn't match what was issued locally — catches "issued but never deployed"
 - 🧪 Optional **staging mode** — issue test certificates against Let's Encrypt's staging environment, so trying things out doesn't burn your real rate limit (5 certs/domain/week)
 - 🔁 Converts a certificate to `.pfx` (PKCS#12) for IIS, with an optional randomly generated password
 - 🌍 Supports English and Russian interface language, switchable at any time
+
+### 📂 Use a dedicated folder
+
+Run the script from its own empty folder, not from a directory with unrelated files. Both scripts treat every subfolder next to themselves as a potential managed domain (see auto-discovery above) and write their own config/domain-list files there — mixing in unrelated content risks it being picked up as a "domain" or getting cluttered with generated files.
 
 ### 🐧🍎 Linux / macOS — `cert.sh`
 
@@ -84,8 +89,9 @@ No Administrator shell required — by default certbot's config/work/logs folder
 2. Add a new domain
 3. Remove a domain from the list
 4. Convert a certificate to PFX for IIS
-5. Refresh the table
-6. Settings (email, output folder, language, staging mode)
+5. Check live certificates on the sites
+6. Refresh the table
+7. Settings (email, output folder, language, staging mode)
 0. Exit
 
 *(`0` is always "exit" / "back" in every menu.)*
@@ -93,6 +99,8 @@ No Administrator shell required — by default certbot's config/work/logs folder
 On first run you'll be asked to choose an interface language, then guided to set your email and add your first domain.
 
 Removing a domain (item 3) only takes it off the tracked list and rewrites `domains.conf` — it does **not** delete any certificate files. If a folder named after that domain still exists next to the script or in the output folder, it will be auto-discovered and re-added on the next run; delete or move that folder too if you want it gone for good.
+
+"Check live certificates on the sites" (item 5) connects to `<domain>:443` for every domain in the list — the same list used for issuing — and reads the certificate the site is actually presenting, independent of any local file. It shows a table with the live expiry and a **DEPLOYED** column: `YES` means the live certificate matches the one issued locally, `NO` means a different certificate is being served (e.g. the web server wasn't reloaded after a renewal), and `?` means there's no local copy to compare against. `UNREACHABLE` means the connection on port 443 failed (site down, DNS not resolving, firewalled, wrong port). This check is read-only and doesn't touch certbot or any local files.
 
 ### ⚙️ Configuration & generated files
 
@@ -132,9 +140,14 @@ You can override paths via environment variables:
 - 📊 Показывают таблицу статусов с обратным отсчётом до истечения и цветовой индикацией (действует / скоро истекает / критично / истёк)
 - 📁 Копируют выпущенные сертификаты (`fullchain.pem`, `cert.pem`, `chain.pem`, `privkey.pem`) в настраиваемую папку вывода с правильными правами доступа
 - ✅ Проверяют, что сертификат и приватный ключ действительно образуют пару, перед копированием или сборкой PFX — не дадут поставить нерабочую связку
+- 🌐 Проверяют сертификат, который реально отдаёт каждый сайт (подключение на 443 порт), и отмечают, если он не совпадает с тем, что выпущен локально — ловит ситуацию «выпущен, но не задеплоен»
 - 🧪 Опциональный **тестовый режим (staging)** — выпуск тестовых сертификатов через staging-окружение Let's Encrypt, чтобы эксперименты не тратили реальный лимит (5 сертификатов/домен в неделю)
 - 🔁 Конвертируют сертификат в `.pfx` (PKCS#12) для IIS, с опциональной генерацией случайного пароля
 - 🌍 Поддерживают русский и английский интерфейс, язык можно переключить в любой момент
+
+### 📂 Используйте отдельную папку
+
+Запускайте скрипт из своей собственной пустой папки, а не из директории с посторонними файлами. Оба скрипта считают каждую подпапку рядом с собой потенциальным управляемым доменом (см. автообнаружение выше) и сохраняют туда же свои файлы конфигурации и список доменов — посторонний контент рискует быть принятым за «домен» или просто засорит папку сгенерированными файлами.
 
 ### 🐧🍎 Linux / macOS — `cert.sh`
 
@@ -196,8 +209,9 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 2. Добавить новый домен
 3. Удалить домен из списка
 4. Конвертировать сертификат в PFX для IIS
-5. Показать таблицу заново
-6. Настройки (email, папка вывода, язык, тестовый режим)
+5. Проверить сертификаты на самих сайтах
+6. Показать таблицу заново
+7. Настройки (email, папка вывода, язык, тестовый режим)
 0. Выход
 
 *(`0` — всегда «выход» / «назад» в любом меню.)*
@@ -205,6 +219,8 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 При первом запуске нужно будет выбрать язык интерфейса, затем указать email и добавить первый домен.
 
 Удаление домена (пункт 3) только убирает его из отслеживаемого списка и переписывает `domains.conf` — файлы сертификата при этом **не удаляются**. Если папка с именем этого домена всё ещё лежит рядом со скриптом или в папке вывода, она будет автоматически обнаружена и снова добавлена в список при следующем запуске; чтобы избавиться от домена насовсем, удалите или переместите и эту папку.
+
+«Проверить сертификаты на самих сайтах» (пункт 5) подключается к `<домен>:443` для каждого домена из списка — того же, что используется для выпуска — и читает сертификат, который сайт реально отдаёт, независимо от локальных файлов. Показывается таблица с реальным сроком действия и колонкой **РАЗВЁРНУТ**: `ДА` означает, что сертификат на сайте совпадает с выпущенным локально, `НЕТ` — что отдаётся другой сертификат (например, веб-сервер не перезагрузили после перевыпуска), `?` — нет локальной копии для сравнения. `НЕДОСТУПЕН` означает, что подключение на 443 порт не удалось (сайт лежит, DNS не резолвится, файрвол, не тот порт). Проверка ничего не меняет — не трогает certbot и локальные файлы.
 
 ### ⚙️ Конфигурация и генерируемые файлы
 
