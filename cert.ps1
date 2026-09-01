@@ -250,6 +250,9 @@ $Strings = @{
   'en:staging_banner' = '⚠ STAGING MODE is ON - issued certificates are TEST certificates and are not trusted by browsers.'
   'ru:staging_banner' = '⚠ ВКЛЮЧЁН ТЕСТОВЫЙ РЕЖИМ (staging) — выпущенные сертификаты ТЕСТОВЫЕ и не будут доверенными в браузерах.'
 
+  'en:press_enter' = 'Press Enter to continue...'
+  'ru:press_enter' = 'Нажмите Enter для продолжения...'
+
   'en:invalid_choice' = 'Invalid choice.'
   'ru:invalid_choice' = 'Неверный выбор.'
   'en:menu_title' = 'What do you want to do?'
@@ -308,6 +311,19 @@ function Log     { param([string]$Msg) Write-Host '[INFO]  ' -ForegroundColor Cy
 function Warn-Msg { param([string]$Msg) Write-Host '[WARN]  ' -ForegroundColor Yellow -NoNewline; Write-Host $Msg }
 function Ok-Msg   { param([string]$Msg) Write-Host '[ OK ]  ' -ForegroundColor Green -NoNewline; Write-Host $Msg }
 function Die      { param([string]$Msg) Write-Host '[ERR ]  ' -ForegroundColor Red -NoNewline; Write-Host $Msg; exit 1 }
+
+$NoClear = ConvertTo-Bool $env:NO_CLEAR
+
+function Clear-Screen {
+  if ($NoClear) { return }
+  Clear-Host
+}
+
+function Wait-ForEnter {
+  if ($NoClear) { return }
+  Write-Host ''
+  Read-Host (T press_enter) | Out-Null
+}
 
 # ---------------------------------------------------------------------------
 # Dependencies
@@ -713,6 +729,8 @@ function Convert-ToIis {
 
 function Show-SettingsMenu {
   while ($true) {
+    Clear-Screen
+    Show-Header
     Write-Host ''
     Write-Host (T settings_title)
     Write-Host (T settings_email_label @($Email))
@@ -758,6 +776,7 @@ function Show-SettingsMenu {
       '0' { return }
       default { Warn-Msg (T invalid_choice) }
     }
+    Wait-ForEnter
   }
 }
 
@@ -797,11 +816,15 @@ function Show-MainMenu {
 # Main
 # ---------------------------------------------------------------------------
 
+Clear-Screen
 Show-Header
+
+$showedStartupNotice = $false
 
 if ($DiscoveredCount -gt 0) {
   Write-Host ''
   Ok-Msg (T discovered_domains @($DiscoveredCount))
+  $showedStartupNotice = $true
 }
 
 if (-not $Email -or $Domains.Count -eq 0) {
@@ -809,10 +832,15 @@ if (-not $Email -or $Domains.Count -eq 0) {
   Warn-Msg (T first_run_notice)
   if (-not $Email) { Warn-Msg (T first_run_email_hint) }
   if ($Domains.Count -eq 0) { Warn-Msg (T first_run_domains_hint) }
+  $showedStartupNotice = $true
 }
 
+if ($showedStartupNotice) { Wait-ForEnter }
+
 while ($true) {
+  Clear-Screen
+  Show-Header
   Show-Table
   Show-MainMenu
-  Write-Host ''
+  Wait-ForEnter
 }

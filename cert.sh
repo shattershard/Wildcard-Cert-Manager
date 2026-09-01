@@ -32,6 +32,19 @@ warn()    { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
 success() { echo -e "${GREEN}[ OK ]${RESET}  $*"; }
 die()     { echo -e "${RED}[ERR ]${RESET}  $*" >&2; exit 1; }
 
+NO_CLEAR="${NO_CLEAR:-false}"
+
+clear_screen() {
+  [[ "$NO_CLEAR" == "true" ]] && return
+  clear 2>/dev/null || printf '\033[2J\033[H'
+}
+
+press_enter() {
+  [[ "$NO_CLEAR" == "true" ]] && return
+  echo
+  read -rp "$(t press_enter)"
+}
+
 save_config() {
   cat > "$CONFIG_FILE" <<CFG
 EMAIL="${EMAIL}"
@@ -257,6 +270,9 @@ t() {
 
     en:staging_banner) fmt="⚠ STAGING MODE is ON — issued certificates are TEST certificates and are not trusted by browsers." ;;
     ru:staging_banner) fmt="⚠ ВКЛЮЧЁН ТЕСТОВЫЙ РЕЖИМ (staging) — выпущенные сертификаты ТЕСТОВЫЕ и не будут доверенными в браузерах." ;;
+
+    en:press_enter) fmt="Press Enter to continue..." ;;
+    ru:press_enter) fmt="Нажмите Enter для продолжения..." ;;
 
     en:invalid_choice) fmt="Invalid choice." ;;
     ru:invalid_choice) fmt="Неверный выбор." ;;
@@ -775,6 +791,8 @@ convert_to_iis() {
 
 settings_menu() {
   while true; do
+    clear_screen
+    print_header
     echo
     echo -e "${BOLD}$(t settings_title)${RESET}"
     echo "$(t settings_email_label "$EMAIL")"
@@ -823,6 +841,7 @@ settings_menu() {
       0) return ;;
       *) warn "$(t invalid_choice)" ;;
     esac
+    press_enter
   done
 }
 
@@ -851,13 +870,17 @@ main_menu() {
 }
 
 main() {
+  clear_screen
   print_header
 
   id "$OUTPUT_USER" >/dev/null 2>&1 || die "$(t user_not_found "$OUTPUT_USER")"
 
+  local showed_startup_notice="false"
+
   if [[ $DISCOVERED_COUNT -gt 0 ]]; then
     echo
     success "$(t discovered_domains "$DISCOVERED_COUNT")"
+    showed_startup_notice="true"
   fi
 
   if [[ -z "$EMAIL" || ${#DOMAINS[@]} -eq 0 ]]; then
@@ -865,12 +888,17 @@ main() {
     warn "$(t first_run_notice)"
     [[ -z "$EMAIL" ]]          && warn "$(t first_run_email_hint)"
     [[ ${#DOMAINS[@]} -eq 0 ]] && warn "$(t first_run_domains_hint)"
+    showed_startup_notice="true"
   fi
 
+  [[ "$showed_startup_notice" == "true" ]] && press_enter
+
   while true; do
+    clear_screen
+    print_header
     print_table
     main_menu
-    echo
+    press_enter
   done
 }
 

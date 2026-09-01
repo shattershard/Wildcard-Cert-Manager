@@ -107,7 +107,7 @@ The scripts create the following files next to themselves — they are **not** m
 
 You can override paths via environment variables:
 
-- Both scripts: `EMAIL`, `UI_LANG`, `OUTPUT_DIR`, `DOMAINS_FILE`, `CONFIG_FILE`, `CERTBOT_BIN`
+- Both scripts: `EMAIL`, `UI_LANG`, `OUTPUT_DIR`, `DOMAINS_FILE`, `CONFIG_FILE`, `CERTBOT_BIN`, `NO_CLEAR` (set to `1`/`true` to disable screen clearing — useful when logging output to a file)
 - `cert.sh` only: nothing extra
 - `cert.ps1` only: `CERTBOT_HOME` (default `%LOCALAPPDATA%\Certbot`)
 
@@ -117,6 +117,7 @@ You can override paths via environment variables:
 - Output files land in `~/ssl/<domain>/` (or `%USERPROFILE%\ssl\<domain>\` on Windows) by default — configurable in Settings.
 - The `.pfx` password is shown once and not stored anywhere — save it immediately.
 - **Staging mode** (Settings → item 4) adds `--staging` to every certbot call. Staging certificates are signed by a test CA and will show as untrusted in browsers — use it only to test the workflow, not for real traffic. Toggle it off before issuing production certificates.
+- The screen clears between menus so the interface stays on one page instead of scrolling — each action pauses on "Press Enter to continue..." first, so you always get a chance to read the result before it clears. Set `NO_CLEAR=1` to disable this (e.g. when redirecting output to a log).
 
 ---
 
@@ -218,7 +219,7 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 Пути можно переопределить через переменные окружения:
 
-- Оба скрипта: `EMAIL`, `UI_LANG`, `OUTPUT_DIR`, `DOMAINS_FILE`, `CONFIG_FILE`, `CERTBOT_BIN`
+- Оба скрипта: `EMAIL`, `UI_LANG`, `OUTPUT_DIR`, `DOMAINS_FILE`, `CONFIG_FILE`, `CERTBOT_BIN`, `NO_CLEAR` (установите `1`/`true`, чтобы отключить очистку экрана — полезно при логировании вывода в файл)
 - Только `cert.sh`: дополнительных нет
 - Только `cert.ps1`: `CERTBOT_HOME` (по умолчанию `%LOCALAPPDATA%\Certbot`)
 
@@ -228,3 +229,4 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 - По умолчанию файлы сохраняются в `~/ssl/<домен>/` (или `%USERPROFILE%\ssl\<домен>\` на Windows) — можно изменить в Настройках.
 - Пароль от `.pfx` показывается один раз и больше нигде не сохраняется — запишите его сразу.
 - **Тестовый режим (staging)** (Настройки → пункт 4) добавляет `--staging` к каждому вызову certbot. Тестовые сертификаты подписаны тестовым CA и будут показываться браузером как недоверенные — используйте режим только для проверки сценария, не для реального трафика. Не забудьте выключить его перед выпуском боевых сертификатов.
+- Экран очищается между меню, чтобы интерфейс оставался на одной «странице», а не прокручивался — перед каждой очисткой скрипт ждёт «Нажмите Enter для продолжения...», так что результат действия всегда успеваешь увидеть. Установите `NO_CLEAR=1`, чтобы отключить это (например, при перенаправлении вывода в лог).
