@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
   Wildcard Cert Manager - Windows/PowerShell port of cert.sh
   Issues/manages wildcard Let's Encrypt certificates via certbot (manual DNS-01)
@@ -560,7 +560,7 @@ function Invoke-ConvertToIisMenu {
 function Convert-ToIis {
   param([string]$Domain)
 
-  Assert-Dependency -Name 'openssl' -ChocoPackage 'openssl' -WingetId 'ShiningLight.OpenSSL'
+  Assert-Dependency -Name 'openssl' -ChocoPackage 'openssl' -WingetId 'ShiningLight.OpenSSL.Light'
 
   $outSrc = Join-Path $OutputDir $Domain
   $liveSrc = Join-Path $LiveDir $Domain

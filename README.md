@@ -57,7 +57,7 @@ choco install certbot openssl
 
 # via winget
 winget install EFF.Certbot
-winget install ShiningLight.OpenSSL
+winget install ShiningLight.OpenSSL.Light
 ```
 
 #### Usage
@@ -65,6 +65,14 @@ winget install ShiningLight.OpenSSL
 ```powershell
 .\cert.ps1
 ```
+
+If Windows blocks the script with "running scripts is disabled on this system", allow local scripts for your user once:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+⚠️ `cert.ps1` is for a native PowerShell prompt (Windows PowerShell or `pwsh`) — don't run `cert.sh` from Git Bash/MSYS on Windows, it expects a real Linux environment (`sudo`, `certbot` as a Linux package, etc.) and won't work there. Use WSL if you specifically want the Bash version on Windows.
 
 No Administrator shell required — by default certbot's config/work/logs folders live under `%LOCALAPPDATA%\Certbot` (override with the `CERTBOT_HOME` environment variable), and manual DNS-01 issuance doesn't need to bind to any port.
 
@@ -154,7 +162,7 @@ choco install certbot openssl
 
 # через winget
 winget install EFF.Certbot
-winget install ShiningLight.OpenSSL
+winget install ShiningLight.OpenSSL.Light
 ```
 
 #### Использование
@@ -162,6 +170,14 @@ winget install ShiningLight.OpenSSL
 ```powershell
 .\cert.ps1
 ```
+
+Если Windows блокирует запуск с ошибкой «выполнение сценариев отключено в этой системе», разрешите локальные скрипты для своего пользователя один раз:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+⚠️ `cert.ps1` рассчитан на запуск из обычной PowerShell-консоли (Windows PowerShell или `pwsh`) — не запускайте `cert.sh` из Git Bash/MSYS на Windows, ему нужно настоящее Linux-окружение (`sudo`, `certbot` как Linux-пакет и т.д.), там он работать не будет. Если хочется именно Bash-версию на Windows — используйте WSL.
 
 Запуск от администратора не требуется — по умолчанию папки config/work/logs certbot'а находятся в `%LOCALAPPDATA%\Certbot` (переопределяется переменной окружения `CERTBOT_HOME`), а ручной DNS-01 challenge не требует занимать какой-либо порт.
 
