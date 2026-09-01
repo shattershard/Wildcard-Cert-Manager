@@ -206,8 +206,8 @@ t() {
     ru:settings_opt_output) fmt="  2) Изменить папку вывода" ;;
     en:settings_opt_lang) fmt="  3) Change language" ;;
     ru:settings_opt_lang) fmt="  3) Изменить язык" ;;
-    en:settings_opt_back) fmt="  4) Back" ;;
-    ru:settings_opt_back) fmt="  4) Назад" ;;
+    en:settings_opt_back) fmt="  0) Back" ;;
+    ru:settings_opt_back) fmt="  0) Назад" ;;
     en:settings_new_email_prompt) fmt="  New email: " ;;
     ru:settings_new_email_prompt) fmt="  Новый email: " ;;
     en:settings_email_updated) fmt="Email updated: %s" ;;
@@ -235,8 +235,8 @@ t() {
     ru:menu_opt_refresh) fmt="  4) Показать таблицу заново" ;;
     en:menu_opt_settings) fmt="  5) Settings (email, output folder, language)" ;;
     ru:menu_opt_settings) fmt="  5) Настройки (email, папка вывода, язык)" ;;
-    en:menu_opt_exit) fmt="  6) Exit" ;;
-    ru:menu_opt_exit) fmt="  6) Выход" ;;
+    en:menu_opt_exit) fmt="  0) Exit" ;;
+    ru:menu_opt_exit) fmt="  0) Выход" ;;
     en:menu_prompt) fmt="  Choice: " ;;
     ru:menu_prompt) fmt="  Выбор: " ;;
 
@@ -352,7 +352,7 @@ discover_domain_dirs "$OUTPUT_DIR"
 
 days_left() {
   local domain="$1"
-  local cert="${LIVE_DIR}/${domain}/cert.pem"
+  local cert="${OUTPUT_DIR}/${domain}/cert.pem"
 
   [[ -f "$cert" ]] || { echo "MISSING"; return; }
 
@@ -705,7 +705,7 @@ settings_menu() {
         select_language
         success "$(t settings_lang_updated "$UI_LANG")"
         ;;
-      4) return ;;
+      0) return ;;
       *) warn "$(t invalid_choice)" ;;
     esac
   done
@@ -728,7 +728,7 @@ main_menu() {
     3) convert_to_iis_menu ;;
     4) print_table ;;
     5) settings_menu ;;
-    6) exit 0 ;;
+    0) exit 0 ;;
     *) warn "$(t invalid_choice)" ;;
   esac
 }
@@ -750,9 +750,8 @@ main() {
     [[ ${#DOMAINS[@]} -eq 0 ]] && warn "$(t first_run_domains_hint)"
   fi
 
-  print_table
-
   while true; do
+    print_table
     main_menu
     echo
   done
